@@ -5,7 +5,7 @@ import os
 import time
 import uuid
 from datetime import datetime
-
+from prometheus_flask_exporter import PrometheusMetrics
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -14,7 +14,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-
+# Initialize Prometheus metrics
+metrics = PrometheusMetrics(app)
+metrics.info('app_info', 'Application info', version='1.0.0')
 # In-memory storage
 items = []
 
