@@ -1,0 +1,246 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  
+  # ==========================================
+  # JOB 1: Run Tests
+  # ==========================================
+  test:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Cache Python dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Run tests with coverage
+        run: |
+          pytest tests/ --cov=src --cov-report=xml --cov-report=term
+      
+      - name: Display coverage summary
+        run: |
+          echo "Coverage Report:"
+          coverage report
+      
+      - name: Upload coverage to Codecov (optional)
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+
+  # ==========================================
+  # JOB 2: SAST - Static Security Scan
+  # ==========================================
+  sast-scan:
+    name: SAST Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install Bandit
+        run: |
+          pip install bandit
+      
+      - name: Run Bandit security scan
+        run: |
+          echo "Running Bandit SAST scan..."
+          bandit -r src/ -f json -o bandit-report.json || true
+          bandit -r src/ -f screen
+      
+      - name: Upload Bandit report as artifact
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: bandit-security-report
+          path: bandit-report.json
+
+  # ==========================================
+  # JOB 3: Dependency Vulnerability Scan
+  # ==========================================
+  trivy-fs-scan:
+    name: Trivy Filesystem Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Run Trivy vulnerability scanner (filesystem)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-fs-results.sarif'
+      
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-fs-results.sarif'
+      
+      - name: Run Trivy scan (table output for logs)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
+
+  # ==========================================
+  # JOB 4: Build and Push Docker Image
+  # Only runs on main branch after tests pass
+  # ==========================================
+  build-and-push:
+    name: Build and Push Docker Image
+    needs: [test, sast-scan, trivy-fs-scan]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    outputs:
+      image-tag: ${{ steps.meta.outputs.version }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      
+      - name: Log in to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/devops-api
+          tags: |
+            type=raw,value=1.0.${{ github.run_number }}
+            type=sha,prefix=,format=short
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      
+      - name: Display pushed image tags
+        run: |
+          echo "✅ Docker image pushed successfully!"
+          echo "📦 Image tags:"
+          echo "${{ steps.meta.outputs.tags }}"
+          echo ""
+          echo "🔗 View on DockerHub:"
+          echo "https://hub.docker.com/r/${{ secrets.DOCKERHUB_USERNAME }}/devops-api"
+
+  # ==========================================
+  # JOB 5: Scan Docker Image
+  # ==========================================
+  trivy-image-scan:
+    name: Trivy Docker Image Scan
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Run Trivy vulnerability scanner on Docker image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ secrets.DOCKERHUB_USERNAME }}/devops-api:1.0.${{ github.run_number }}'
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+      
+      - name: Run Trivy scan (SARIF format for Security tab)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ secrets.DOCKERHUB_USERNAME }}/devops-api:1.0.${{ github.run_number }}'
+          format: 'sarif'
+          output: 'trivy-image-results.sarif'
+      
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-image-results.sarif'
+
+  # ==========================================
+  # JOB 6: DAST - Dynamic Security Testing
+  # ==========================================
+  dast-scan:
+    name: DAST Security Scan
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Pull Docker image
+        run: |
+          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/devops-api:1.0.${{ github.run_number }}
+      
+      - name: Run Docker container
+        run: |
+          docker run -d -p 5000:5000 --name test-app \
+            ${{ secrets.DOCKERHUB_USERNAME }}/devops-api:1.0.${{ github.run_number }}
+          echo "Waiting for application to start..."
+          sleep 15
+      
+      - name: Verify application is running
+        run: |
+          echo "Testing health endpoint..."
+          curl -f http://localhost:5000/health || exit 1
+          echo "✅ Application is healthy!"
+      
+      - name: Run OWASP ZAP baseline scan
+        uses: zaproxy/action-baseline@v0.7.0
+        with:
+          target: 'http://localhost:5000'
+          allow_issue_writing: false
+          fail_action: false
+      
+      - name: Stop and remove container
+        if: always()
+        run: |
+          docker stop test-app || true
+          docker rm test-app || true
