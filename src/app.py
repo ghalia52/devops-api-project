@@ -1,11 +1,12 @@
 from flask import Flask, jsonify, request
+from prometheus_flask_exporter import PrometheusMetrics
 import logging
 import json
 import os
 import time
 import uuid
 from datetime import datetime
-from prometheus_flask_exporter import PrometheusMetrics
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -14,9 +15,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
 # Initialize Prometheus metrics
 metrics = PrometheusMetrics(app)
 metrics.info('app_info', 'Application info', version='1.0.0')
+
 # In-memory storage
 items = []
 
@@ -133,4 +136,4 @@ def internal_error(error):
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host='0.0.0.0', port=port, debug=False)  # nosec B104
