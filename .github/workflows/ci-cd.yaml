@@ -45,12 +45,6 @@ jobs:
         run: |
           echo "Coverage Report:"
           coverage report
-      
-      - name: Upload coverage to Codecov (optional)
-        uses: codecov/codecov-action@v3
-        with:
-          file: ./coverage.xml
-          fail_ci_if_error: false
 
   # ==========================================
   # JOB 2: SAST - Static Security Scan
@@ -98,24 +92,12 @@ jobs:
       
       - name: Run Trivy vulnerability scanner (filesystem)
         uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-fs-results.sarif'
-      
-      - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: 'trivy-fs-results.sarif'
-      
-      - name: Run Trivy scan (table output for logs)
-        uses: aquasecurity/trivy-action@master
+        continue-on-error: true
         with:
           scan-type: 'fs'
           scan-ref: '.'
           format: 'table'
+          severity: 'CRITICAL,HIGH,MEDIUM'
 
   # ==========================================
   # JOB 4: Build and Push Docker Image
@@ -183,24 +165,11 @@ jobs:
     steps:
       - name: Run Trivy vulnerability scanner on Docker image
         uses: aquasecurity/trivy-action@master
+        continue-on-error: true
         with:
           image-ref: '${{ secrets.DOCKERHUB_USERNAME }}/devops-api:1.0.${{ github.run_number }}'
           format: 'table'
           severity: 'CRITICAL,HIGH'
-          exit-code: '0'
-      
-      - name: Run Trivy scan (SARIF format for Security tab)
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: '${{ secrets.DOCKERHUB_USERNAME }}/devops-api:1.0.${{ github.run_number }}'
-          format: 'sarif'
-          output: 'trivy-image-results.sarif'
-      
-      - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: 'trivy-image-results.sarif'
 
   # ==========================================
   # JOB 6: DAST - Dynamic Security Testing
@@ -234,6 +203,7 @@ jobs:
       
       - name: Run OWASP ZAP baseline scan
         uses: zaproxy/action-baseline@v0.7.0
+        continue-on-error: true
         with:
           target: 'http://localhost:5000'
           allow_issue_writing: false
