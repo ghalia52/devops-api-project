@@ -52,6 +52,19 @@ def log_response(response):
     }))
     return response
 
+# Root endpoint
+@app.route('/', methods=['GET'])
+def root():
+    return jsonify({
+        'message': 'DevOps API is running',
+        'version': '1.0.0',
+        'endpoints': {
+            'health': '/health',
+            'metrics': '/metrics',
+            'api': '/api/items'
+        }
+    }), 200
+
 # Health check endpoint
 @app.route('/health', methods=['GET'])
 def health():
