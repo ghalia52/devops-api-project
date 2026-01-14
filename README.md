@@ -140,7 +140,7 @@ graph LR
 ```mermaid
 flowchart TD
     START([Git Push]) --> TEST{Unit Tests<br/>Pass?}
-    TEST -->|No| FAIL1[❌] Pipeline Fails]
+    TEST -->|No| FAIL1[❌ Pipeline Fails]
     TEST -->|Yes| SAST[SAST Scan<br/>Bandit]
     
     SAST --> DEP[Dependency Scan<br/>Trivy FS]
