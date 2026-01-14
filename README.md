@@ -140,7 +140,7 @@ graph LR
 ```mermaid
 flowchart TD
     START([Git Push]) --> TEST{Unit Tests<br/>Pass?}
-    TEST -->|No| FAIL1[❌ Pipeline Fails]
+    TEST -->|No| FAIL1[❌] Pipeline Fails]
     TEST -->|Yes| SAST[SAST Scan<br/>Bandit]
     
     SAST --> DEP[Dependency Scan<br/>Trivy FS]
@@ -283,19 +283,6 @@ docker-compose -f docker-compose-monitoring.yaml up -d
 ## 🔌 API Endpoints
 
 ### Endpoint Overview
-
-```mermaid
-graph LR
-    CLIENT[Client] -->|GET| ROOT[/ <br/> Root]
-    CLIENT -->|GET| HEALTH[/health <br/> Health Check]
-    CLIENT -->|GET| METRICS[/metrics <br/> Prometheus Metrics]
-    CLIENT -->|GET/POST| ITEMS[/api/items <br/> List/Create Items]
-    CLIENT -->|GET/PUT/DELETE| ITEM[/api/items/:id <br/> Item Operations]
-    
-    style HEALTH fill:#90EE90
-    style METRICS fill:#FFD700
-    style ITEMS fill:#87CEEB
-```
 
 ### 1. Root Endpoint
 ```bash
